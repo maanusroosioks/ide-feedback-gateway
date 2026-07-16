@@ -1,4 +1,4 @@
-package com.example.idefeedbackgateway.integration.moodle;
+package com.example.idefeedbackgateway.integration.moodle.config;
 
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -11,6 +11,9 @@ public class MoodleRestClientConfig {
 
     @Bean
     public RestClient moodleRestClient(RestClient.Builder builder, MoodleProperties properties) {
-        return builder.baseUrl(properties.baseUrl()).build();
+        return builder
+                .baseUrl(properties.baseUrl())
+                .requestInterceptor(new MoodleLoggingInterceptor())
+                .build();
     }
 }

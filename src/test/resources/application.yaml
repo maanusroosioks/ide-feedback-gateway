@@ -5,14 +5,14 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: https://login.microsoftonline.com/${azure.tenant-id}/v2.0
+          issuer-uri: https://test
 
 azure:
-  tenant-id: ${AZURE_TENANT_ID}
-  audience: ${AZURE_AUDIENCE}
+  tenant-id: test
+  audience: test
 
 moodle:
-  base-url: ${MOODLE_BASE_URL}
-  token: ${MOODLE_TOKEN}
+  base-url: https://test
+  token: test
   submit-run-function: mod_idetestfeedback_submit_test_run
   validation-error-prefix: idetestfeedback_validation_
