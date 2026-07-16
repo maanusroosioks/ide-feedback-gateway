@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: ide-feedback-gateway
+
+moodle:
+  base-url: ${MOODLE_BASE_URL:http://localhost:8000}
+  token: ${MOODLE_TOKEN:changeme}
+  submit-run-function: mod_idetestfeedback_submit_test_run
