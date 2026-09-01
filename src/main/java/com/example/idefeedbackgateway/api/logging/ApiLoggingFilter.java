@@ -35,9 +35,12 @@ public class ApiLoggingFilter extends OncePerRequestFilter {
     }
 
     private void log(ContentCachingRequestWrapper request, ContentCachingResponseWrapper response, long durationMs) {
-        HttpExchangeLogSupport.logExchange(log, request.getMethod(), requestUri(request), response.getStatus(), durationMs,
-                HttpExchangeLogSupport.truncate(HttpExchangeLogSupport.decode(request.getContentAsByteArray())),
-                HttpExchangeLogSupport.truncate(HttpExchangeLogSupport.decode(response.getContentAsByteArray())));
+        String method = request.getMethod();
+        String uri = requestUri(request);
+        HttpExchangeLogSupport.logRequest(log, "API", method, uri,
+                HttpExchangeLogSupport.decode(request.getContentAsByteArray()));
+        HttpExchangeLogSupport.logResponse(log, "API", method, uri, response.getStatus(), durationMs,
+                HttpExchangeLogSupport.decode(response.getContentAsByteArray()));
     }
 
     private String requestUri(HttpServletRequest request) {

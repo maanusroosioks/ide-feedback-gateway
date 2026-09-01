@@ -7,7 +7,7 @@ import java.nio.charset.StandardCharsets;
 
 public final class HttpExchangeLogSupport {
 
-    private static final int MAX_LOGGED_BODY_BYTES = 10_000;
+    private static final int MAX_LOGGED_BODY_CHARS = 10_000;
 
     private HttpExchangeLogSupport() {
     }
@@ -16,21 +16,23 @@ public final class HttpExchangeLogSupport {
         return bytes == null || bytes.length == 0 ? "" : new String(bytes, StandardCharsets.UTF_8);
     }
 
-    public static String truncate(String body) {
-        return body.length() <= MAX_LOGGED_BODY_BYTES
-                ? body
-                : body.substring(0, MAX_LOGGED_BODY_BYTES) + "...(truncated)";
+    public static void logRequest(Logger log, String source, String method, String uri, String body) {
+        log.info("{} REQUEST {} {} body=[{}]", source, method, uri, truncate(body));
     }
 
-    /** Logs a completed exchange: WARN if the status is an error status, INFO otherwise. */
-    public static void logExchange(Logger log, String method, String uri, int status, long durationMs,
-                                    String requestBody, String responseBody) {
+    public static void logResponse(Logger log, String source, String method, String uri, int status, long durationMs,
+                                   String body) {
         log.atLevel(status >= 400 ? Level.WARN : Level.INFO)
-                .log("{} {} -> {} ({} ms) requestBody=[{}] responseBody=[{}]",
-                        method, uri, status, durationMs, requestBody, responseBody);
+                .log("{} RESPONSE {} {} -> {} ({} ms) body=[{}]", source, method, uri, status, durationMs, truncate(body));
     }
 
-    public static void logTransportFailure(Logger log, String method, String uri, String requestBody, Throwable error) {
-        log.error("{} {} requestBody=[{}] failed error={}", method, uri, requestBody, error.toString());
+    public static void logTransportFailure(Logger log, String source, String method, String uri, Throwable error) {
+        log.error("{} REQUEST {} {} FAILED error={}", source, method, uri, error.toString(), error);
+    }
+
+    private static String truncate(String body) {
+        return body.length() <= MAX_LOGGED_BODY_CHARS
+                ? body
+                : body.substring(0, MAX_LOGGED_BODY_CHARS) + "...(truncated)";
     }
 }
