@@ -16,6 +16,9 @@ public record TestRunRequest(
         @Size(max = 100) String commitHash,
         Long startedAt,
         Long finishedAt,
-        @NotEmpty List<@Valid TestResultRequest> results
+        @NotEmpty List<@Valid TestResult> results,
+        List<@Valid TestFile> testFiles,
+        Boolean captureDisabled,
+        Boolean warningAcknowledged
 ) {
 }

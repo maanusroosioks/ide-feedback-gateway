@@ -12,6 +12,9 @@ public record MoodleTestRunPayload(
         String commitHash,
         Long startedAt,
         Long finishedAt,
-        List<MoodleTestResultPayload> results
+        List<MoodleTestResultPayload> results,
+        List<MoodleTestFilePayload> testFiles,
+        Boolean captureDisabled,
+        Boolean warningAcknowledged
 ) {
 }

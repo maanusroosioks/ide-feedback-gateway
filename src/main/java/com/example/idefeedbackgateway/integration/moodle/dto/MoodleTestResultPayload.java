@@ -8,6 +8,7 @@ public record MoodleTestResultPayload(
         TestResultStatus status,
         Integer durationMs,
         String message,
-        String stackTraceHash
+        String stackTraceHash,
+        MoodleTestSourcePayload source
 ) {
 }

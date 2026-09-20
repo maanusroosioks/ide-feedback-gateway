@@ -2,7 +2,9 @@ package com.example.idefeedbackgateway.integration.moodle;
 
 import com.example.idefeedbackgateway.integration.moodle.config.MoodleProperties;
 import com.example.idefeedbackgateway.integration.moodle.dto.MoodleSubmitRunResponse;
+import com.example.idefeedbackgateway.integration.moodle.dto.MoodleTestFilePayload;
 import com.example.idefeedbackgateway.integration.moodle.dto.MoodleTestResultPayload;
+import com.example.idefeedbackgateway.integration.moodle.dto.MoodleTestSourcePayload;
 import com.example.idefeedbackgateway.integration.moodle.dto.MoodleTestRunPayload;
 import com.example.idefeedbackgateway.integration.moodle.exception.MoodleIntegrationException;
 import com.example.idefeedbackgateway.integration.moodle.exception.MoodleValidationException;
@@ -49,7 +51,7 @@ public class MoodleClient {
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(form)
                 .retrieve()
-                .onStatus(HttpStatusCode::isError, (request, response) -> {
+                .onStatus(HttpStatusCode::isError, (_, response) -> {
                     String body = new String(response.getBody().readAllBytes(), StandardCharsets.UTF_8);
                     throw new MoodleIntegrationException(
                             "Moodle web service returned HTTP %s: %s".formatted(response.getStatusCode(), body));
@@ -114,10 +116,17 @@ public class MoodleClient {
         putIfNotNull(form, "commithash", payload.commitHash());
         putIfNotNull(form, "startedat", payload.startedAt());
         putIfNotNull(form, "finishedat", payload.finishedAt());
+        putIfNotNull(form, "capturedisabled", payload.captureDisabled());
+        putIfNotNull(form, "warningacknowledged", payload.warningAcknowledged());
 
         List<MoodleTestResultPayload> results = payload.results();
         for (int i = 0; i < results.size(); i++) {
             putResultParams(form, "results[%d]".formatted(i), results.get(i));
+        }
+
+        List<MoodleTestFilePayload> testFiles = payload.testFiles();
+        for (int i = 0; i < testFiles.size(); i++) {
+            putTestFileParams(form, "testfiles[%d]".formatted(i), testFiles.get(i));
         }
         return form;
     }
@@ -129,11 +138,43 @@ public class MoodleClient {
         putIfNotNull(form, prefix + "[durationms]", result.durationMs());
         putIfNotNull(form, prefix + "[message]", result.message());
         putIfNotNull(form, prefix + "[stacktracehash]", result.stackTraceHash());
+        putSourceParams(form, prefix + "[source]", result.source());
+    }
+
+    private void putSourceParams(MultiValueMap<String, Object> form, String prefix, MoodleTestSourcePayload source) {
+        if (source == null) {
+            return;
+        }
+        putIfNotNull(form, prefix + "[kind]", source.kind().name());
+        putIfNotNull(form, prefix + "[filepath]", source.filePath());
+        putIfNotNull(form, prefix + "[startline]", source.startLine());
+        putIfNotNull(form, prefix + "[endline]", source.endLine());
+        putIfNotNull(form, prefix + "[code]", source.code());
+        putIfNotNull(form, prefix + "[truncated]", source.truncated());
+        putIfNotNull(form, prefix + "[normalizedcodehash]", source.normalizedCodeHash());
+    }
+
+    private void putTestFileParams(MultiValueMap<String, Object> form, String prefix, MoodleTestFilePayload testFile) {
+        putIfNotNull(form, prefix + "[path]", testFile.path());
+        putIfNotNull(form, prefix + "[sha256]", testFile.sha256());
+        putIfNotNull(form, prefix + "[content]", testFile.content());
+        putIfNotNull(form, prefix + "[truncated]", testFile.truncated());
     }
 
     private void putIfNotNull(MultiValueMap<String, Object> form, String key, Object value) {
         if (value != null) {
-            form.add(key, value);
+            form.add(key, toFormValue(value));
         }
+    }
+
+    /**
+     * Moodle's {@code validate_param} compares a PARAM_BOOL value against {@code clean_param}'s
+     * output as a string, so it only accepts "1"/"0" - "true" is rejected as an invalid parameter.
+     */
+    private Object toFormValue(Object value) {
+        if (value instanceof Boolean flag) {
+            return flag ? "1" : "0";
+        }
+        return value;
     }
 }
