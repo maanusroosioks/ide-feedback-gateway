@@ -191,6 +191,15 @@ class MoodleClientTest {
     }
 
     @Test
+    void emptyResponseBecomesIntegrationException() {
+        server.expect(requestTo(ENDPOINT)).andRespond(withStatus(HttpStatus.NO_CONTENT));
+
+        MoodleIntegrationException ex = assertThrows(MoodleIntegrationException.class,
+                () -> moodleClient.submitTestRun(PAYLOAD));
+        assertEquals("Moodle returned an empty response", ex.getMessage());
+    }
+
+    @Test
     void nonObjectResponseBecomesIntegrationException() {
         server.expect(requestTo(ENDPOINT)).andRespond(success("[42]"));
 

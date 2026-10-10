@@ -12,7 +12,7 @@ public record TestResult(
         @NotBlank @Size(max = 1024) String testName,
         @NotNull TestResultStatus status,
         @Min(0) Integer durationMs,
-        String message,
+        @Size(max = 4000) String message,
         @Valid TestSource source
 ) {
 }

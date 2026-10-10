@@ -1,10 +1,12 @@
 package com.example.idefeedbackgateway.integration.moodle.config;
 
+import ch.qos.logback.classic.Level;
 import com.example.idefeedbackgateway.integration.moodle.MoodleClient;
 import com.example.idefeedbackgateway.integration.moodle.MoodleClientFixture;
 import com.example.idefeedbackgateway.integration.moodle.dto.MoodleSubmitRunResponse;
 import com.example.idefeedbackgateway.integration.moodle.dto.MoodleTestRunPayload;
 import com.example.idefeedbackgateway.integration.moodle.exception.MoodleIntegrationException;
+import com.example.idefeedbackgateway.logging.LogLevels;
 import com.example.idefeedbackgateway.model.Ide;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,10 +46,25 @@ class MoodleLoggingInterceptorTest {
     void redactsTheWebServiceTokenFromTheLoggedRequest(CapturedOutput output) {
         server.expect(request -> { }).andRespond(withSuccess("{\"runid\":42}", MediaType.APPLICATION_JSON));
 
-        moodleClient.submitTestRun(PAYLOAD);
+        try (LogLevels.Restore ignored = LogLevels.set(MoodleLoggingInterceptor.class.getName(), Level.DEBUG)) {
+            moodleClient.submitTestRun(PAYLOAD);
+        }
 
         assertTrue(output.getOut().contains("wstoken=***"), output.getOut());
         assertFalse(output.getAll().contains(SECRET_TOKEN), "the Moodle token must never reach the logs");
+    }
+
+    @Test
+    void keepsTheStudentsEmailAndRunOutOfInfoLogs(CapturedOutput output) {
+        server.expect(request -> { }).andRespond(withSuccess("{\"runid\":42}", MediaType.APPLICATION_JSON));
+
+        try (LogLevels.Restore ignored = LogLevels.set(MoodleLoggingInterceptor.class.getName(), Level.INFO)) {
+            moodleClient.submitTestRun(PAYLOAD);
+        }
+
+        assertTrue(output.getOut().contains("MOODLE REQUEST POST"), output.getOut());
+        assertFalse(output.getAll().contains("taltech.ee"), output.getAll());
+        assertFalse(output.getAll().contains("test_add"), output.getAll());
     }
 
     /** The interceptor reads the body to log it; the client must still be able to read it after. */

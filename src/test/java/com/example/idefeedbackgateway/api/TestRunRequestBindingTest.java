@@ -116,6 +116,25 @@ class TestRunRequestBindingTest {
     }
 
     @Test
+    void acceptsMessagesUpToThePluginsCap() {
+        assertViolations(PAYLOAD.replace("AssertionError: assert 4 == 5", "m".repeat(4000)), Set.of());
+        assertViolation(PAYLOAD.replace("AssertionError: assert 4 == 5", "m".repeat(4001)), "results[0].message");
+    }
+
+    /** No single file is over the cap here; together they are. */
+    @Test
+    void capsTheTotalContentAcrossFiles() {
+        assertViolations(withExtraFile(PAYLOAD, 900_000), Set.of());
+        assertViolation(withExtraFile(withExtraFile(PAYLOAD, 500_000), 500_000), "fileContentWithinLimit");
+    }
+
+    @Test
+    void rejectsNullListEntries() {
+        assertViolation(PAYLOAD.replace("\"results\": [", "\"results\": [ null,"), "results[0].<list element>");
+        assertViolation(PAYLOAD.replace("\"testFiles\": [", "\"testFiles\": [ null,"), "testFiles[0].<list element>");
+    }
+
+    @Test
     void rejectsRepoUrlLongerThanMoodlesColumn() {
         assertViolation(PAYLOAD.replace("https://github.com/org/repo", "https://github.com/" + "r".repeat(1010)),
                 "repoUrl");
@@ -175,6 +194,11 @@ class TestRunRequestBindingTest {
             Set<ConstraintViolation<TestRunRequest>> violations = factory.getValidator().validate(request);
             assertTrue(violations.isEmpty(), () -> "unexpected violations: " + violations);
         }
+    }
+
+    private static String withExtraFile(String json, int contentChars) {
+        return json.replace("\"testFiles\": [",
+                "\"testFiles\": [ { \"path\": \"src/big.py\", \"content\": \"" + "x".repeat(contentChars) + "\" },");
     }
 
     private void assertViolation(String json, String path) {

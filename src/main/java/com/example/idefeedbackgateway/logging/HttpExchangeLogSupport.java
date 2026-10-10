@@ -17,7 +17,11 @@ public final class HttpExchangeLogSupport {
     }
 
     public static void logRequest(Logger log, String source, String method, String uri, String body) {
-        log.info("{} REQUEST {} {} body=[{}]", source, method, uri, truncate(body));
+        if (log.isDebugEnabled()) {
+            log.debug("{} REQUEST {} {} body=[{}]", source, method, uri, truncate(body));
+        } else {
+            log.info("{} REQUEST {} {}", source, method, uri);
+        }
     }
 
     public static void logResponse(Logger log, String source, String method, String uri, int status, long durationMs,

@@ -10,12 +10,14 @@ import org.springframework.security.oauth2.server.resource.introspection.OAuth2I
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -74,6 +76,27 @@ class ApiExceptionHandlerTest extends ApiWebMvcTest {
     }
 
     @Test
+    void unknownEnumValueInsideAListNamesTheNestedField() throws Exception {
+        String body = VALID_BODY.replace("\"PASSED\"", "\"PASS\"");
+
+        mockMvc.perform(authorized(post(RUNS_URL)).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.details[0]").value(startsWith("results[0].status: must be one of [")));
+    }
+
+    @Test
+    void nullListEntriesAreValidationErrorsRatherThanServerErrors() throws Exception {
+        String body = VALID_BODY.replace("\"testFiles\": [", "\"testFiles\": [ null,");
+
+        mockMvc.perform(authorized(post(RUNS_URL)).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.details", hasItem(startsWith("testFiles[0]"))));
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
     void wronglyTypedValueNamesTheField() throws Exception {
         String body = VALID_BODY.replace("1758134400000", "\"yesterday\"");
 
@@ -96,15 +119,31 @@ class ApiExceptionHandlerTest extends ApiWebMvcTest {
                 .andExpect(jsonPath("$.errorMessage").value("The submission window closed"));
     }
 
+    /** Moodle's raw response can hold internal hosts or stack traces; it stays in the gateway's log. */
     @Test
-    void moodleFailureIsBadGateway() throws Exception {
+    void moodleFailureIsBadGatewayWithoutMoodlesResponse() throws Exception {
         when(service.submitRun(any(), anyString()))
-                .thenThrow(new MoodleIntegrationException("Moodle web service returned HTTP 500: oops"));
+                .thenThrow(new MoodleIntegrationException("Moodle web service returned HTTP 500: <html>oops</html>"));
 
         mockMvc.perform(authorized(post(RUNS_URL)).content(VALID_BODY))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.errorCode").value("MOODLE_UNAVAILABLE"))
-                .andExpect(jsonPath("$.errorMessage").value(containsString("HTTP 500")));
+                .andExpect(jsonPath("$.errorMessage").value("Moodle could not accept the run"))
+                .andExpect(jsonPath("$.details").isEmpty())
+                .andExpect(content().string(not(containsString("oops"))));
+    }
+
+    @Test
+    void moodleErrorCodeIsPassedOnWithoutItsMessage() throws Exception {
+        when(service.submitRun(any(), anyString()))
+                .thenThrow(MoodleIntegrationException.fromMoodleError("invalidrecord", "Can't find data record in "
+                        + "database table course_modules. SELECT * FROM {course_modules}"));
+
+        mockMvc.perform(authorized(post(RUNS_URL)).content(VALID_BODY))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.errorMessage").value("Moodle could not accept the run"))
+                .andExpect(jsonPath("$.details[0]").value("moodleErrorCode: invalidrecord"))
+                .andExpect(content().string(not(containsString("course_modules"))));
     }
 
     @Test

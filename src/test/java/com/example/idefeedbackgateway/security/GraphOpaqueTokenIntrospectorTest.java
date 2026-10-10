@@ -11,13 +11,18 @@ import org.springframework.security.oauth2.server.resource.introspection.OAuth2I
 import org.springframework.test.web.client.ExpectedCount;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.Base64;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
@@ -34,15 +39,17 @@ class GraphOpaqueTokenIntrospectorTest {
     private static final String TOKEN = "graph-access-token";
     private static final String TALTECH_TENANT = "11111111-2222-3333-4444-555555555555";
     private static final String OTHER_TENANT = "99999999-8888-7777-6666-555555555555";
+    private static final String STUDENT = "{\"userPrincipalName\":\"student@taltech.ee\"}";
 
     private MockRestServiceServer server;
     private GraphOpaqueTokenIntrospector introspector;
 
+    /** The two Graph calls run concurrently, so the order they arrive in is not fixed. */
     @BeforeEach
     void setUp() {
         RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
-        server = MockRestServiceServer.bindTo(builder).build();
-        introspector = new GraphOpaqueTokenIntrospector(builder.build(), properties());
+        server = MockRestServiceServer.bindTo(builder).ignoreExpectOrder(true).build();
+        introspector = new GraphOpaqueTokenIntrospector(builder.build(), properties(), JsonMapper.builder().build());
     }
 
     @Test
@@ -63,6 +70,7 @@ class GraphOpaqueTokenIntrospectorTest {
     @Test
     void rejectsATokenFromAnotherTenant() {
         expectOrganization(OTHER_TENANT);
+        expectMe(STUDENT);
 
         assertThrows(BadOpaqueTokenException.class, () -> introspector.introspect(TOKEN),
                 "a personal or foreign-tenant account must not authenticate");
@@ -83,6 +91,7 @@ class GraphOpaqueTokenIntrospectorTest {
     @Test
     void rejectsTokenGraphDoesNotAccept() {
         server.expect(requestTo(ORGANIZATION_URI)).andRespond(withUnauthorizedRequest());
+        server.expect(requestTo(ME_URI)).andRespond(withUnauthorizedRequest());
 
         assertThrows(BadOpaqueTokenException.class, () -> introspector.introspect(TOKEN));
         server.verify();
@@ -94,12 +103,9 @@ class GraphOpaqueTokenIntrospectorTest {
     @Test
     void reportsGraphOutageAsAProviderFailureRatherThanABadToken() {
         server.expect(requestTo(ORGANIZATION_URI)).andRespond(withServerError());
+        server.expect(requestTo(ME_URI)).andRespond(withServerError());
 
-        OAuth2IntrospectionException thrown =
-                assertThrows(OAuth2IntrospectionException.class, () -> introspector.introspect(TOKEN));
-
-        assertFalse(thrown instanceof BadOpaqueTokenException,
-                "a Graph outage must not be reported to the caller as an invalid token");
+        assertProviderFailure();
         server.verify();
     }
 
@@ -110,22 +116,28 @@ class GraphOpaqueTokenIntrospectorTest {
     @Test
     void reportsMissingPermissionAsAProviderFailureRatherThanABadToken() {
         server.expect(requestTo(ORGANIZATION_URI)).andRespond(withStatus(HttpStatus.FORBIDDEN));
+        expectMe(STUDENT);
 
-        OAuth2IntrospectionException thrown =
-                assertThrows(OAuth2IntrospectionException.class, () -> introspector.introspect(TOKEN));
+        assertProviderFailure();
+        server.verify();
+    }
 
-        assertFalse(thrown instanceof BadOpaqueTokenException);
+    /** Graph throttling the gateway says nothing about the caller's token. */
+    @Test
+    void reportsThrottlingAsAProviderFailureRatherThanABadToken() {
+        server.expect(requestTo(ORGANIZATION_URI)).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+        server.expect(requestTo(ME_URI)).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+
+        assertProviderFailure();
         server.verify();
     }
 
     @Test
     void reportsUnreachableGraphAsAProviderFailureRatherThanABadToken() {
         server.expect(requestTo(ORGANIZATION_URI)).andRespond(withException(new IOException("connect timed out")));
+        server.expect(requestTo(ME_URI)).andRespond(withException(new IOException("connect timed out")));
 
-        OAuth2IntrospectionException thrown =
-                assertThrows(OAuth2IntrospectionException.class, () -> introspector.introspect(TOKEN));
-
-        assertFalse(thrown instanceof BadOpaqueTokenException);
+        assertProviderFailure();
         server.verify();
     }
 
@@ -134,10 +146,7 @@ class GraphOpaqueTokenIntrospectorTest {
         expectOrganization(TALTECH_TENANT);
         server.expect(requestTo(ME_URI)).andRespond(withStatus(HttpStatus.FORBIDDEN));
 
-        OAuth2IntrospectionException thrown =
-                assertThrows(OAuth2IntrospectionException.class, () -> introspector.introspect(TOKEN));
-
-        assertFalse(thrown instanceof BadOpaqueTokenException);
+        assertProviderFailure();
         server.verify();
     }
 
@@ -145,6 +154,7 @@ class GraphOpaqueTokenIntrospectorTest {
     void rejectsATokenForWhichGraphReturnsNoOrganization() {
         server.expect(requestTo(ORGANIZATION_URI))
                 .andRespond(withSuccess("{\"value\":[]}", MediaType.APPLICATION_JSON));
+        expectMe(STUDENT);
 
         assertThrows(BadOpaqueTokenException.class, () -> introspector.introspect(TOKEN),
                 "a personal Microsoft account has no organization");
@@ -164,7 +174,7 @@ class GraphOpaqueTokenIntrospectorTest {
     @Test
     void matchesTheTenantIdIgnoringCase() {
         expectOrganization(TALTECH_TENANT.toUpperCase());
-        expectMe("{\"userPrincipalName\":\"student@taltech.ee\"}");
+        expectMe(STUDENT);
 
         assertEquals("student@taltech.ee", introspector.introspect(TOKEN).getName());
         server.verify();
@@ -173,7 +183,7 @@ class GraphOpaqueTokenIntrospectorTest {
     @Test
     void cachesSuccessfulLookupsSoGraphIsNotCalledPerRequest() {
         expectOrganization(TALTECH_TENANT);
-        expectMe("{\"userPrincipalName\":\"student@taltech.ee\"}");
+        expectMe(STUDENT);
 
         assertEquals("student@taltech.ee", introspector.introspect(TOKEN).getName());
         assertEquals("student@taltech.ee", introspector.introspect(TOKEN).getName());
@@ -181,11 +191,36 @@ class GraphOpaqueTokenIntrospectorTest {
         server.verify();
     }
 
+    /** The cache TTL must not keep a token working past its own expiry. */
+    @Test
+    void doesNotCacheBeyondTheTokensExpiry() {
+        String expired = jwtExpiringAt(Instant.now().minusSeconds(1));
+        expectOrganization(ExpectedCount.twice(), expired, TALTECH_TENANT);
+        expectMe(ExpectedCount.twice(), expired, STUDENT);
+
+        introspector.introspect(expired);
+        introspector.introspect(expired);
+
+        server.verify();
+    }
+
+    @Test
+    void cachesAJwtThatIsStillValid() {
+        String valid = jwtExpiringAt(Instant.now().plus(Duration.ofHours(1)));
+        expectOrganization(once(), valid, TALTECH_TENANT);
+        expectMe(once(), valid, STUDENT);
+
+        introspector.introspect(valid);
+        introspector.introspect(valid);
+
+        server.verify();
+    }
+
     /** A rejection must not stick: the next attempt with the same token asks Graph again. */
     @Test
     void doesNotCacheRejections() {
-        server.expect(ExpectedCount.twice(), requestTo(ORGANIZATION_URI))
-                .andRespond(withUnauthorizedRequest());
+        server.expect(ExpectedCount.twice(), requestTo(ORGANIZATION_URI)).andRespond(withUnauthorizedRequest());
+        server.expect(ExpectedCount.twice(), requestTo(ME_URI)).andRespond(withUnauthorizedRequest());
 
         assertThrows(BadOpaqueTokenException.class, () -> introspector.introspect(TOKEN));
         assertThrows(BadOpaqueTokenException.class, () -> introspector.introspect(TOKEN));
@@ -197,8 +232,11 @@ class GraphOpaqueTokenIntrospectorTest {
     @Test
     void keysTheCacheByToken() {
         expectOrganization(TALTECH_TENANT);
-        expectMe("{\"userPrincipalName\":\"student@taltech.ee\"}");
+        expectMe(STUDENT);
         server.expect(requestTo(ORGANIZATION_URI))
+                .andExpect(header("Authorization", "Bearer other-token"))
+                .andRespond(withUnauthorizedRequest());
+        server.expect(requestTo(ME_URI))
                 .andExpect(header("Authorization", "Bearer other-token"))
                 .andRespond(withUnauthorizedRequest());
 
@@ -208,18 +246,42 @@ class GraphOpaqueTokenIntrospectorTest {
         server.verify();
     }
 
+    private void assertProviderFailure() {
+        OAuth2IntrospectionException thrown =
+                assertThrows(OAuth2IntrospectionException.class, () -> introspector.introspect(TOKEN));
+
+        assertFalse(thrown instanceof BadOpaqueTokenException,
+                "a Graph-side failure must not be reported to the caller as an invalid token");
+    }
+
     private void expectOrganization(String tenantId) {
-        server.expect(requestTo(ORGANIZATION_URI))
-                .andExpect(header("Authorization", "Bearer " + TOKEN))
+        expectOrganization(once(), TOKEN, tenantId);
+    }
+
+    private void expectOrganization(ExpectedCount count, String token, String tenantId) {
+        server.expect(count, requestTo(ORGANIZATION_URI))
+                .andExpect(header("Authorization", "Bearer " + token))
                 .andRespond(withSuccess(
                         "{\"value\":[{\"id\":\"" + tenantId + "\",\"displayName\":\"Test Org\"}]}",
                         MediaType.APPLICATION_JSON));
     }
 
     private void expectMe(String body) {
-        server.expect(requestTo(ME_URI))
-                .andExpect(header("Authorization", "Bearer " + TOKEN))
+        expectMe(once(), TOKEN, body);
+    }
+
+    private void expectMe(ExpectedCount count, String token, String body) {
+        server.expect(count, requestTo(ME_URI))
+                .andExpect(header("Authorization", "Bearer " + token))
                 .andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
+    }
+
+    private static String jwtExpiringAt(Instant exp) {
+        Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
+        String header = encoder.encodeToString("{\"alg\":\"RS256\"}".getBytes(StandardCharsets.UTF_8));
+        String claims = encoder.encodeToString(
+                ("{\"exp\":" + exp.getEpochSecond() + "}").getBytes(StandardCharsets.UTF_8));
+        return header + "." + claims + ".signature";
     }
 
     private GraphProperties properties() {

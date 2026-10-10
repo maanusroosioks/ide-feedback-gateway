@@ -39,10 +39,10 @@ public class MoodleClient {
     private final MoodleProperties properties;
     private final ObjectMapper objectMapper;
 
-    public MoodleSubmitRunResponse submitTestRun(MoodleTestRunPayload payload) {                                                                                                                                               7  import jakarta.servlet.http.HttpServletRequest;
-        var form = toFormParams(payload);                                                                                                                                                            8  import lombok.extern.slf4j.Slf4j;
-        var rawResponse = post(form);                                                                                                                                                                                       9  import org.springframework.http.HttpStatus;
-        return parseResponse(rawResponse);                                                                                                                                                                                    10 +import org.springframework.http.ResponseEntity;
+    public MoodleSubmitRunResponse submitTestRun(MoodleTestRunPayload payload) {
+        MultiValueMap<String, String> form = toFormParams(payload);
+        String rawResponse = post(form);
+        return parseResponse(rawResponse);
     }
 
     private String post(MultiValueMap<String, String> form) {
@@ -78,6 +78,9 @@ public class MoodleClient {
     }
 
     private JsonNode readTree(String rawResponse) {
+        if (rawResponse == null || rawResponse.isBlank()) {
+            throw new MoodleIntegrationException("Moodle returned an empty response");
+        }
         try {
             return objectMapper.readTree(rawResponse);
         } catch (JacksonException e) {

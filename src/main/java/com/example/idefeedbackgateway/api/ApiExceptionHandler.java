@@ -12,6 +12,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.exc.InvalidFormatException;
 
 import java.util.Arrays;
@@ -41,8 +42,9 @@ public class ApiExceptionHandler {
     @ExceptionHandler(MoodleIntegrationException.class)
     public ResponseEntity<ApiErrorResponse> handleMoodleFailure(MoodleIntegrationException ex,
                                                                 HttpServletRequest request) {
+        List<String> details = ex.errorCode() != null ? List.of("moodleErrorCode: " + ex.errorCode()) : List.of();
         return respond(HttpStatus.BAD_GATEWAY, request, ex,
-                ApiErrorResponse.of(ex.getMessage(), ApiErrorCode.MOODLE_UNAVAILABLE));
+                ApiErrorResponse.of("Moodle could not accept the run", ApiErrorCode.MOODLE_UNAVAILABLE, details));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -56,8 +58,8 @@ public class ApiExceptionHandler {
         if (!(ex.getCause() instanceof InvalidFormatException invalidFormat) || invalidFormat.getPath().isEmpty()) {
             return List.of();
         }
-        String field = invalidFormat.getPath().getFirst().getPropertyName();
-        if (field == null) {
+        String field = fieldPath(invalidFormat.getPath());
+        if (field.isEmpty()) {
             return List.of();
         }
         Class<?> targetType = invalidFormat.getTargetType();
@@ -65,6 +67,22 @@ public class ApiExceptionHandler {
                 ? "must be one of " + Arrays.toString(targetType.getEnumConstants())
                 : "is not a valid value";
         return List.of(field + ": " + reason);
+    }
+
+    /** Spelled like Bean Validation's paths, e.g. {@code results[0].status}, so both kinds of error read alike. */
+    private String fieldPath(List<JacksonException.Reference> path) {
+        StringBuilder field = new StringBuilder();
+        for (JacksonException.Reference reference : path) {
+            if (reference.getPropertyName() != null) {
+                if (!field.isEmpty()) {
+                    field.append('.');
+                }
+                field.append(reference.getPropertyName());
+            } else if (reference.getIndex() >= 0) {
+                field.append('[').append(reference.getIndex()).append(']');
+            }
+        }
+        return field.toString();
     }
 
     private ResponseEntity<ApiErrorResponse> respond(HttpStatus status, HttpServletRequest request, Exception ex,
