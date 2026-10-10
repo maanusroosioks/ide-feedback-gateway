@@ -99,8 +99,6 @@ public class GraphOpaqueTokenIntrospector implements OpaqueTokenIntrospector {
                     .retrieve()
                     .body(type);
         } catch (HttpClientErrorException.Forbidden e) {
-            // The token is fine but lacks the permission this gateway needs. Reporting that as a
-            // bad token would lock out every caller and hide the real cause.
             throw new OAuth2IntrospectionException(
                     "Graph denied " + what + "; the gateway may need additional permission", e);
         } catch (HttpClientErrorException e) {

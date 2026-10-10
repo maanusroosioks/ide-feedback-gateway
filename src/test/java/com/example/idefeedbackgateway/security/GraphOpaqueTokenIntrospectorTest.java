@@ -3,13 +3,16 @@ package com.example.idefeedbackgateway.security;
 import com.example.idefeedbackgateway.security.config.GraphProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.core.OAuth2AuthenticatedPrincipal;
 import org.springframework.security.oauth2.server.resource.introspection.BadOpaqueTokenException;
 import org.springframework.security.oauth2.server.resource.introspection.OAuth2IntrospectionException;
+import org.springframework.test.web.client.ExpectedCount;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
+import java.io.IOException;
 import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -26,7 +30,7 @@ class GraphOpaqueTokenIntrospectorTest {
 
     private static final String BASE_URL = "https://graph.example.test/v1.0";
     private static final String ORGANIZATION_URI = BASE_URL + "/organization?$select=id,displayName";
-    private static final String ME_URI = BASE_URL + "/me?$select=id,userPrincipalName,mail,displayName,givenName,surname";
+    private static final String ME_URI = BASE_URL + "/me";
     private static final String TOKEN = "graph-access-token";
     private static final String TALTECH_TENANT = "11111111-2222-3333-4444-555555555555";
     private static final String OTHER_TENANT = "99999999-8888-7777-6666-555555555555";
@@ -105,12 +109,64 @@ class GraphOpaqueTokenIntrospectorTest {
      */
     @Test
     void reportsMissingPermissionAsAProviderFailureRatherThanABadToken() {
-        server.expect(requestTo(ORGANIZATION_URI)).andRespond(withStatus(org.springframework.http.HttpStatus.FORBIDDEN));
+        server.expect(requestTo(ORGANIZATION_URI)).andRespond(withStatus(HttpStatus.FORBIDDEN));
 
         OAuth2IntrospectionException thrown =
                 assertThrows(OAuth2IntrospectionException.class, () -> introspector.introspect(TOKEN));
 
         assertFalse(thrown instanceof BadOpaqueTokenException);
+        server.verify();
+    }
+
+    @Test
+    void reportsUnreachableGraphAsAProviderFailureRatherThanABadToken() {
+        server.expect(requestTo(ORGANIZATION_URI)).andRespond(withException(new IOException("connect timed out")));
+
+        OAuth2IntrospectionException thrown =
+                assertThrows(OAuth2IntrospectionException.class, () -> introspector.introspect(TOKEN));
+
+        assertFalse(thrown instanceof BadOpaqueTokenException);
+        server.verify();
+    }
+
+    @Test
+    void reportsMissingPermissionOnTheUserLookupAsAProviderFailure() {
+        expectOrganization(TALTECH_TENANT);
+        server.expect(requestTo(ME_URI)).andRespond(withStatus(HttpStatus.FORBIDDEN));
+
+        OAuth2IntrospectionException thrown =
+                assertThrows(OAuth2IntrospectionException.class, () -> introspector.introspect(TOKEN));
+
+        assertFalse(thrown instanceof BadOpaqueTokenException);
+        server.verify();
+    }
+
+    @Test
+    void rejectsATokenForWhichGraphReturnsNoOrganization() {
+        server.expect(requestTo(ORGANIZATION_URI))
+                .andRespond(withSuccess("{\"value\":[]}", MediaType.APPLICATION_JSON));
+
+        assertThrows(BadOpaqueTokenException.class, () -> introspector.introspect(TOKEN),
+                "a personal Microsoft account has no organization");
+        server.verify();
+    }
+
+    @Test
+    void rejectsAUserWithoutAUserPrincipalName() {
+        expectOrganization(TALTECH_TENANT);
+        expectMe("{\"id\":\"aaaa-bbbb\",\"mail\":\"student@taltech.ee\"}");
+
+        assertThrows(BadOpaqueTokenException.class, () -> introspector.introspect(TOKEN),
+                "the UPN is the identity passed to Moodle");
+        server.verify();
+    }
+
+    @Test
+    void matchesTheTenantIdIgnoringCase() {
+        expectOrganization(TALTECH_TENANT.toUpperCase());
+        expectMe("{\"userPrincipalName\":\"student@taltech.ee\"}");
+
+        assertEquals("student@taltech.ee", introspector.introspect(TOKEN).getName());
         server.verify();
     }
 
@@ -121,6 +177,33 @@ class GraphOpaqueTokenIntrospectorTest {
 
         assertEquals("student@taltech.ee", introspector.introspect(TOKEN).getName());
         assertEquals("student@taltech.ee", introspector.introspect(TOKEN).getName());
+
+        server.verify();
+    }
+
+    /** A rejection must not stick: the next attempt with the same token asks Graph again. */
+    @Test
+    void doesNotCacheRejections() {
+        server.expect(ExpectedCount.twice(), requestTo(ORGANIZATION_URI))
+                .andRespond(withUnauthorizedRequest());
+
+        assertThrows(BadOpaqueTokenException.class, () -> introspector.introspect(TOKEN));
+        assertThrows(BadOpaqueTokenException.class, () -> introspector.introspect(TOKEN));
+
+        server.verify();
+    }
+
+    /** Another caller's token must never be answered with a cached identity. */
+    @Test
+    void keysTheCacheByToken() {
+        expectOrganization(TALTECH_TENANT);
+        expectMe("{\"userPrincipalName\":\"student@taltech.ee\"}");
+        server.expect(requestTo(ORGANIZATION_URI))
+                .andExpect(header("Authorization", "Bearer other-token"))
+                .andRespond(withUnauthorizedRequest());
+
+        introspector.introspect(TOKEN);
+        assertThrows(BadOpaqueTokenException.class, () -> introspector.introspect("other-token"));
 
         server.verify();
     }

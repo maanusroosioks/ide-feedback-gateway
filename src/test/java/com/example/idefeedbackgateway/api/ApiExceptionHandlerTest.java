@@ -110,6 +110,18 @@ class ApiExceptionHandlerTest {
     }
 
     @Test
+    void wronglyTypedValueNamesTheField() throws Exception {
+        String body = VALID_BODY.replace("1758134400000", "\"yesterday\"");
+
+        mockMvc.perform(authorized(post(RUNS_URL)).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("MALFORMED_REQUEST"))
+                .andExpect(jsonPath("$.details[0]").value("startedAtMs: is not a valid value"));
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
     void moodleValidationFailureIsBadRequest() throws Exception {
         when(service.submitRun(any(), anyString()))
                 .thenThrow(new MoodleValidationException("validation_windowclosed", "The submission window closed"));

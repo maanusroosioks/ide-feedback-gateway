@@ -99,7 +99,7 @@ class MoodleClientFormEncodingTest {
      */
     @Test
     void keepsParameterCountFlatAsTheRunGrows() {
-        List<MoodleTestResultPayload> results = IntStream.range(0, 500).mapToObj(_ -> result()).toList();
+        List<MoodleTestResultPayload> results = IntStream.range(0, 500).mapToObj(i -> result()).toList();
 
         expectRequest(body -> assertEquals(EXPECTED_FORM_PARAMS, body.split("&").length, body));
 
