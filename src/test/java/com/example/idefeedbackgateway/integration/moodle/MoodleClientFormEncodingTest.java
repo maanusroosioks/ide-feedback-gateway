@@ -1,6 +1,6 @@
 package com.example.idefeedbackgateway.integration.moodle;
 
-import com.example.idefeedbackgateway.integration.moodle.config.MoodleProperties;
+import com.example.idefeedbackgateway.integration.moodle.dto.MoodleRunListsPayload;
 import com.example.idefeedbackgateway.integration.moodle.dto.MoodleTestFilePayload;
 import com.example.idefeedbackgateway.integration.moodle.dto.MoodleTestResultPayload;
 import com.example.idefeedbackgateway.integration.moodle.dto.MoodleTestRunPayload;
@@ -13,7 +13,6 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.test.web.client.MockRestServiceServer;
-import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -31,24 +30,18 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 class MoodleClientFormEncodingTest {
 
-    private static final String BASE_URL = "https://moodle.example.test";
-
     /** wstoken, wsfunction, moodlewsrestformat, payload and the nine scalars of a full run. */
     private static final int EXPECTED_FORM_PARAMS = 13;
 
     private MockRestServiceServer server;
     private MoodleClient moodleClient;
-    private JsonMapper jsonMapper;
+    private final JsonMapper jsonMapper = JsonMapper.builder().build();
 
     @BeforeEach
     void setUp() {
-        RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
-        server = MockRestServiceServer.bindTo(builder).build();
-        jsonMapper = JsonMapper.builder().build();
-        moodleClient = new MoodleClient(
-                builder.build(),
-                new MoodleProperties(BASE_URL, "test-token", "mod_idetestfeedback_submit_test_run", "validation_"),
-                jsonMapper);
+        MoodleClientFixture moodle = MoodleClientFixture.create();
+        server = moodle.server();
+        moodleClient = moodle.client();
     }
 
     @Test
@@ -139,7 +132,7 @@ class MoodleClientFormEncodingTest {
                                          List<MoodleTestFilePayload> testFiles) {
         return new MoodleTestRunPayload(
                 "student@taltech.ee", "assignment-101", Ide.VSCODE, "my-project", "a329d43f", "https://github.com/org/repo",
-                1758134400000L, 1758134403120L, results, testFiles, true);
+                1758134400000L, 1758134403120L, new MoodleRunListsPayload(results, testFiles), true);
     }
 
     @FunctionalInterface

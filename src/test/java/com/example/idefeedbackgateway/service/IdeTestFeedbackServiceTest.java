@@ -76,14 +76,14 @@ class IdeTestFeedbackServiceTest {
         assertEquals(new MoodleTestResultPayload(
                         "test_calculator", "test_add", TestResultStatus.FAILED, 12, "assert 4 == 5",
                         new MoodleTestSourcePayload("tests/test_calculator.py", 3, 4)),
-                payload.results().getFirst());
+                payload.lists().results().getFirst());
     }
 
     @Test
     void keepsResultWithoutSource() {
         MoodleTestRunPayload payload = submit(request(List.of(result(null)), List.of(), false));
 
-        assertNull(payload.results().getFirst().source());
+        assertNull(payload.lists().results().getFirst().source());
     }
 
     @Test
@@ -94,14 +94,14 @@ class IdeTestFeedbackServiceTest {
         MoodleTestRunPayload payload = submit(request(List.of(first, second), List.of(), false));
 
         assertEquals(List.of("first", "second"),
-                payload.results().stream().map(MoodleTestResultPayload::testName).toList());
+                payload.lists().results().stream().map(MoodleTestResultPayload::testName).toList());
     }
 
     @Test
     void sendsEmptyTestFileListWhenNoneWereSent() {
         MoodleTestRunPayload payload = submit(request(List.of(result(null)), null, false));
 
-        assertTrue(payload.testFiles().isEmpty());
+        assertTrue(payload.lists().testFiles().isEmpty());
     }
 
     @Test
@@ -136,7 +136,7 @@ class IdeTestFeedbackServiceTest {
 
     private MoodleTestFilePayload submitFile(Boolean captureDisabled) {
         TestFile file = new TestFile("tests/test_calculator.py", "import pytest", true);
-        return submit(request(List.of(result(null)), List.of(file), captureDisabled)).testFiles().getFirst();
+        return submit(request(List.of(result(null)), List.of(file), captureDisabled)).lists().testFiles().getFirst();
     }
 
     private MoodleTestRunPayload submit(TestRunRequest request) {

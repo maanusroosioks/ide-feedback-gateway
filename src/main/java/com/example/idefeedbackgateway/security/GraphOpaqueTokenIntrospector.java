@@ -21,8 +21,8 @@ import org.springframework.web.client.RestClient;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.HashMap;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -30,14 +30,13 @@ import java.util.Map;
 @Component
 public class GraphOpaqueTokenIntrospector implements OpaqueTokenIntrospector {
 
-    private static final String ME_ENDPOINT =
-            "/me";
+    private static final String ME_ENDPOINT = "/me";
     private static final String ORGANIZATION_ENDPOINT = "/organization?$select=id,displayName";
     private static final String GUEST_UPN_MARKER = "#EXT#";
 
     private final RestClient graphRestClient;
     private final GraphProperties properties;
-    private final Cache<String, GraphMe> cache;
+    private final Cache<String, OAuth2AuthenticatedPrincipal> cache;
 
     public GraphOpaqueTokenIntrospector(RestClient graphRestClient, GraphProperties properties) {
         this.graphRestClient = graphRestClient;
@@ -50,17 +49,12 @@ public class GraphOpaqueTokenIntrospector implements OpaqueTokenIntrospector {
 
     @Override
     public OAuth2AuthenticatedPrincipal introspect(String token) {
-        String cacheKey = cacheKey(token);
-        GraphMe cached = cache.getIfPresent(cacheKey);
-        if (cached != null) {
-            return principal(cached);
-        }
+        return cache.get(cacheKey(token), key -> lookUp(token));
+    }
 
+    private OAuth2AuthenticatedPrincipal lookUp(String token) {
         requireExpectedTenant(token);
-        GraphMe me = requireIdentity(token);
-
-        cache.put(cacheKey, me);
-        return principal(me);
+        return principal(requireIdentity(token));
     }
 
     private void requireExpectedTenant(String token) {
@@ -109,7 +103,7 @@ public class GraphOpaqueTokenIntrospector implements OpaqueTokenIntrospector {
     }
 
     private OAuth2AuthenticatedPrincipal principal(GraphMe me) {
-        Map<String, Object> attributes = new LinkedHashMap<>();
+        Map<String, Object> attributes = new HashMap<>();
         putIfPresent(attributes, "id", me.id());
         putIfPresent(attributes, "userPrincipalName", me.userPrincipalName());
         putIfPresent(attributes, "mail", me.mail());

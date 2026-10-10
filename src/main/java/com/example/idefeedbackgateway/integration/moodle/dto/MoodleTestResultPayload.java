@@ -2,15 +2,17 @@ package com.example.idefeedbackgateway.integration.moodle.dto;
 
 import com.example.idefeedbackgateway.model.TestResultStatus;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import tools.jackson.databind.PropertyNamingStrategies;
+import tools.jackson.databind.annotation.JsonNaming;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonNaming(PropertyNamingStrategies.LowerCaseStrategy.class)
 public record MoodleTestResultPayload(
-        @JsonProperty("testsuite") String testSuite,
-        @JsonProperty("testname") String testName,
-        @JsonProperty("status") TestResultStatus status,
-        @JsonProperty("durationms") Integer durationMs,
-        @JsonProperty("message") String message,
-        @JsonProperty("source") MoodleTestSourcePayload source
+        String testSuite,
+        String testName,
+        TestResultStatus status,
+        Integer durationMs,
+        String message,
+        MoodleTestSourcePayload source
 ) {
 }

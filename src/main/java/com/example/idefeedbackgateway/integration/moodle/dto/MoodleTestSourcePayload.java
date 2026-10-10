@@ -1,12 +1,14 @@
 package com.example.idefeedbackgateway.integration.moodle.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import tools.jackson.databind.PropertyNamingStrategies;
+import tools.jackson.databind.annotation.JsonNaming;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonNaming(PropertyNamingStrategies.LowerCaseStrategy.class)
 public record MoodleTestSourcePayload(
-        @JsonProperty("path") String path,
-        @JsonProperty("startline") Integer startLine,
-        @JsonProperty("endline") Integer endLine
+        String path,
+        Integer startLine,
+        Integer endLine
 ) {
 }

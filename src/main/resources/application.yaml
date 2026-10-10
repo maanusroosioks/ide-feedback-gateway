@@ -15,3 +15,5 @@ moodle:
   token: ${MOODLE_TOKEN}
   submit-run-function: mod_idetestfeedback_submit_test_run
   validation-error-prefix: validation_
+  connect-timeout: 5s
+  read-timeout: 30s

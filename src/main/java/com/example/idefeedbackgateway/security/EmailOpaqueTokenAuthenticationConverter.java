@@ -13,6 +13,6 @@ class EmailOpaqueTokenAuthenticationConverter implements OpaqueTokenAuthenticati
 
     @Override
     public Authentication convert(String introspectedToken, OAuth2AuthenticatedPrincipal principal) {
-        return new UsernamePasswordAuthenticationToken(principal.getName(), null, principal.getAuthorities());
+        return UsernamePasswordAuthenticationToken.authenticated(principal.getName(), null, principal.getAuthorities());
     }
 }

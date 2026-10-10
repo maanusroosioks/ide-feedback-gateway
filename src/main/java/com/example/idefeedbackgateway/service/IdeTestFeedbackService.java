@@ -5,8 +5,9 @@ import com.example.idefeedbackgateway.api.dto.TestResult;
 import com.example.idefeedbackgateway.api.dto.TestRunRequest;
 import com.example.idefeedbackgateway.api.dto.TestRunResponse;
 import com.example.idefeedbackgateway.api.dto.TestSource;
-import com.example.idefeedbackgateway.integration.moodle.dto.MoodleSubmitRunResponse;
 import com.example.idefeedbackgateway.integration.moodle.MoodleClient;
+import com.example.idefeedbackgateway.integration.moodle.dto.MoodleRunListsPayload;
+import com.example.idefeedbackgateway.integration.moodle.dto.MoodleSubmitRunResponse;
 import com.example.idefeedbackgateway.integration.moodle.dto.MoodleTestFilePayload;
 import com.example.idefeedbackgateway.integration.moodle.dto.MoodleTestResultPayload;
 import com.example.idefeedbackgateway.integration.moodle.dto.MoodleTestRunPayload;
@@ -33,9 +34,9 @@ public class IdeTestFeedbackService {
                 .toList();
 
         boolean captureDisabled = Boolean.TRUE.equals(request.captureDisabled());
-        List<MoodleTestFilePayload> testFiles = request.testFiles() == null
-                ? List.of()
-                : request.testFiles().stream().map(file -> toPayload(file, captureDisabled)).toList();
+        List<MoodleTestFilePayload> testFiles = request.testFiles().stream()
+                .map(file -> toPayload(file, captureDisabled))
+                .toList();
 
         return new MoodleTestRunPayload(
                 userEmail,
@@ -46,8 +47,7 @@ public class IdeTestFeedbackService {
                 request.repoUrl(),
                 request.startedAtMs(),
                 request.finishedAtMs(),
-                results,
-                testFiles,
+                new MoodleRunListsPayload(results, testFiles),
                 request.captureDisabled()
         );
     }

@@ -1,9 +1,15 @@
 package com.example.idefeedbackgateway.integration.moodle.dto;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
+import tools.jackson.databind.PropertyNamingStrategies;
+import tools.jackson.databind.annotation.JsonNaming;
 
+@JsonNaming(PropertyNamingStrategies.LowerCaseStrategy.class)
 public record MoodleSubmitRunResponse(
-        @JsonProperty("runid") Long runId,
+        Long runId,
         String status
 ) {
+
+    public MoodleSubmitRunResponse {
+        status = status != null ? status : "ok";
+    }
 }

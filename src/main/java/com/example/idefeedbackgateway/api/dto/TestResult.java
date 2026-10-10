@@ -1,7 +1,6 @@
 package com.example.idefeedbackgateway.api.dto;
 
 import com.example.idefeedbackgateway.model.TestResultStatus;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;

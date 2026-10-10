@@ -1,6 +1,6 @@
 package com.example.idefeedbackgateway.integration.moodle;
 
-import com.example.idefeedbackgateway.integration.moodle.config.MoodleProperties;
+import com.example.idefeedbackgateway.integration.moodle.dto.MoodleRunListsPayload;
 import com.example.idefeedbackgateway.integration.moodle.dto.MoodleSubmitRunResponse;
 import com.example.idefeedbackgateway.integration.moodle.dto.MoodleTestResultPayload;
 import com.example.idefeedbackgateway.integration.moodle.dto.MoodleTestRunPayload;
@@ -16,13 +16,14 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.client.ResponseCreator;
-import org.springframework.web.client.RestClient;
 import tools.jackson.core.JacksonException;
-import tools.jackson.databind.json.JsonMapper;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
+import static com.example.idefeedbackgateway.integration.moodle.MoodleClientFixture.ENDPOINT;
+import static com.example.idefeedbackgateway.integration.moodle.MoodleClientFixture.minimalRun;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -32,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
@@ -41,20 +43,16 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
  */
 class MoodleClientTest {
 
-    private static final String BASE_URL = "https://moodle.example.test";
-    private static final String ENDPOINT = BASE_URL + "/webservice/rest/server.php";
+    private static final MoodleTestRunPayload PAYLOAD = minimalRun(Ide.VSCODE);
 
     private MockRestServiceServer server;
     private MoodleClient moodleClient;
 
     @BeforeEach
     void setUp() {
-        RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
-        server = MockRestServiceServer.bindTo(builder).build();
-        moodleClient = new MoodleClient(
-                builder.build(),
-                new MoodleProperties(BASE_URL, "test-token", "mod_idetestfeedback_submit_test_run", "validation_"),
-                JsonMapper.builder().build());
+        MoodleClientFixture moodle = MoodleClientFixture.create();
+        server = moodle.server();
+        moodleClient = moodle.client();
     }
 
     @Test
@@ -71,7 +69,7 @@ class MoodleClientTest {
                         "ide", "VSCODE")))
                 .andRespond(success("{\"runid\":42}"));
 
-        moodleClient.submitTestRun(payload(Ide.VSCODE));
+        moodleClient.submitTestRun(PAYLOAD);
 
         server.verify();
     }
@@ -88,7 +86,7 @@ class MoodleClientTest {
                 })
                 .andRespond(success("{\"runid\":42}"));
 
-        moodleClient.submitTestRun(payload(null));
+        moodleClient.submitTestRun(minimalRun(null));
 
         server.verify();
     }
@@ -102,8 +100,10 @@ class MoodleClientTest {
         moodleClient.submitTestRun(new MoodleTestRunPayload(
                 "student@taltech.ee", "assignment-101", Ide.VSCODE, null, null, "https://github.com/org/repo",
                 null, null,
-                List.of(new MoodleTestResultPayload(null, "test_add", TestResultStatus.PASSED, null, null, null)),
-                List.of(), null));
+                new MoodleRunListsPayload(
+                        List.of(new MoodleTestResultPayload(null, "test_add", TestResultStatus.PASSED, null, null, null)),
+                        List.of()),
+                null));
 
         server.verify();
     }
@@ -112,14 +112,14 @@ class MoodleClientTest {
     void returnsRunIdAndStatusFromMoodle() {
         server.expect(requestTo(ENDPOINT)).andRespond(success("{\"runid\":42,\"status\":\"queued\"}"));
 
-        assertEquals(new MoodleSubmitRunResponse(42L, "queued"), moodleClient.submitTestRun(payload(Ide.VSCODE)));
+        assertEquals(new MoodleSubmitRunResponse(42L, "queued"), moodleClient.submitTestRun(PAYLOAD));
     }
 
     @Test
     void defaultsStatusToOkWhenMoodleOnlyReturnsRunId() {
         server.expect(requestTo(ENDPOINT)).andRespond(success("{\"runid\":42}"));
 
-        assertEquals(new MoodleSubmitRunResponse(42L, "ok"), moodleClient.submitTestRun(payload(Ide.VSCODE)));
+        assertEquals(new MoodleSubmitRunResponse(42L, "ok"), moodleClient.submitTestRun(PAYLOAD));
     }
 
     @Test
@@ -130,7 +130,7 @@ class MoodleClientTest {
                 """));
 
         MoodleValidationException ex = assertThrows(MoodleValidationException.class,
-                () -> moodleClient.submitTestRun(payload(Ide.VSCODE)));
+                () -> moodleClient.submitTestRun(PAYLOAD));
         assertEquals("validation_windowclosed", ex.errorCode());
         assertEquals("The submission window closed", ex.getMessage());
     }
@@ -142,7 +142,7 @@ class MoodleClientTest {
                 """));
 
         MoodleIntegrationException ex = assertThrows(MoodleIntegrationException.class,
-                () -> moodleClient.submitTestRun(payload(Ide.VSCODE)));
+                () -> moodleClient.submitTestRun(PAYLOAD));
         assertFalse(ex instanceof MoodleValidationException);
         assertEquals("invalidparameter", ex.errorCode());
         assertEquals("Invalid parameter", ex.getMessage());
@@ -155,7 +155,7 @@ class MoodleClientTest {
                 """));
 
         MoodleIntegrationException ex = assertThrows(MoodleIntegrationException.class,
-                () -> moodleClient.submitTestRun(payload(Ide.VSCODE)));
+                () -> moodleClient.submitTestRun(PAYLOAD));
         assertFalse(ex instanceof MoodleValidationException);
     }
 
@@ -164,7 +164,7 @@ class MoodleClientTest {
         server.expect(requestTo(ENDPOINT)).andRespond(success("{\"exception\":\"moodle_exception\"}"));
 
         MoodleIntegrationException ex = assertThrows(MoodleIntegrationException.class,
-                () -> moodleClient.submitTestRun(payload(Ide.VSCODE)));
+                () -> moodleClient.submitTestRun(PAYLOAD));
         assertNull(ex.errorCode());
         assertEquals("unknown Moodle error", ex.getMessage());
     }
@@ -175,7 +175,7 @@ class MoodleClientTest {
                 .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE).body("maintenance mode"));
 
         MoodleIntegrationException ex = assertThrows(MoodleIntegrationException.class,
-                () -> moodleClient.submitTestRun(payload(Ide.VSCODE)));
+                () -> moodleClient.submitTestRun(PAYLOAD));
         assertTrue(ex.getMessage().contains("503"), ex.getMessage());
         assertTrue(ex.getMessage().contains("maintenance mode"), ex.getMessage());
     }
@@ -186,7 +186,7 @@ class MoodleClientTest {
                 .andRespond(withSuccess("<html>Notice: max_input_vars</html>", MediaType.TEXT_HTML));
 
         MoodleIntegrationException ex = assertThrows(MoodleIntegrationException.class,
-                () -> moodleClient.submitTestRun(payload(Ide.VSCODE)));
+                () -> moodleClient.submitTestRun(PAYLOAD));
         assertTrue(ex.getMessage().startsWith("Moodle returned a non-JSON response"), ex.getMessage());
     }
 
@@ -195,7 +195,7 @@ class MoodleClientTest {
         server.expect(requestTo(ENDPOINT)).andRespond(success("[42]"));
 
         MoodleIntegrationException ex = assertThrows(MoodleIntegrationException.class,
-                () -> moodleClient.submitTestRun(payload(Ide.VSCODE)));
+                () -> moodleClient.submitTestRun(PAYLOAD));
         assertTrue(ex.getMessage().startsWith("Moodle returned an unexpected response shape"), ex.getMessage());
     }
 
@@ -204,7 +204,7 @@ class MoodleClientTest {
         server.expect(requestTo(ENDPOINT)).andRespond(success("{\"status\":\"ok\"}"));
 
         MoodleIntegrationException ex = assertThrows(MoodleIntegrationException.class,
-                () -> moodleClient.submitTestRun(payload(Ide.VSCODE)));
+                () -> moodleClient.submitTestRun(PAYLOAD));
         assertTrue(ex.getMessage().contains("missing 'runid'"), ex.getMessage());
     }
 
@@ -213,18 +213,20 @@ class MoodleClientTest {
         server.expect(requestTo(ENDPOINT)).andRespond(success("{\"runid\":\"not-a-number\"}"));
 
         MoodleIntegrationException ex = assertThrows(MoodleIntegrationException.class,
-                () -> moodleClient.submitTestRun(payload(Ide.VSCODE)));
+                () -> moodleClient.submitTestRun(PAYLOAD));
         assertInstanceOf(JacksonException.class, ex.getCause());
+    }
+
+    @Test
+    void unreachableMoodleBecomesIntegrationException() {
+        server.expect(requestTo(ENDPOINT)).andRespond(withException(new IOException("Connection refused")));
+
+        MoodleIntegrationException ex = assertThrows(MoodleIntegrationException.class,
+                () -> moodleClient.submitTestRun(PAYLOAD));
+        assertTrue(ex.getMessage().startsWith("Moodle web service could not be reached"), ex.getMessage());
     }
 
     private static ResponseCreator success(String json) {
         return withSuccess(json, MediaType.APPLICATION_JSON);
-    }
-
-    private static MoodleTestRunPayload payload(Ide ide) {
-        return new MoodleTestRunPayload(
-                "student@taltech.ee", "assignment-101", ide, null, null, null, null, null,
-                List.of(new MoodleTestResultPayload(null, "test_add", TestResultStatus.PASSED, null, null, null)),
-                List.of(), null);
     }
 }

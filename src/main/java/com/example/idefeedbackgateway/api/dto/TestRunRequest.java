@@ -1,8 +1,6 @@
 package com.example.idefeedbackgateway.api.dto;
 
 import com.example.idefeedbackgateway.model.Ide;
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
@@ -28,6 +26,10 @@ public record TestRunRequest(
         @Size(max = 200) List<@Valid TestFile> testFiles,
         Boolean captureDisabled
 ) {
+
+    public TestRunRequest {
+        testFiles = testFiles != null ? testFiles : List.of();
+    }
 
     @AssertTrue(message = "finishedAtMs must not be before startedAtMs")
     public boolean isTimingOrdered() {

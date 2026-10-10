@@ -2,31 +2,12 @@ package com.example.idefeedbackgateway.api;
 
 import com.example.idefeedbackgateway.integration.moodle.exception.MoodleIntegrationException;
 import com.example.idefeedbackgateway.integration.moodle.exception.MoodleValidationException;
-import com.example.idefeedbackgateway.security.ApiSecurityErrorWriter;
-import com.example.idefeedbackgateway.security.GraphAuthenticationEntryPoint;
-import com.example.idefeedbackgateway.security.SecurityConfig;
-import com.example.idefeedbackgateway.service.IdeTestFeedbackService;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
-import org.springframework.security.oauth2.core.DefaultOAuth2AuthenticatedPrincipal;
 import org.springframework.security.oauth2.server.resource.introspection.BadOpaqueTokenException;
 import org.springframework.security.oauth2.server.resource.introspection.OAuth2IntrospectionException;
-import org.springframework.security.oauth2.server.resource.introspection.OpaqueTokenIntrospector;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.List;
-import java.util.Map;
 
-import static com.example.idefeedbackgateway.api.IdeTestFeedbackControllerTest.EMAIL;
-import static com.example.idefeedbackgateway.api.IdeTestFeedbackControllerTest.RUNS_URL;
-import static com.example.idefeedbackgateway.api.IdeTestFeedbackControllerTest.TOKEN;
-import static com.example.idefeedbackgateway.api.IdeTestFeedbackControllerTest.VALID_BODY;
-import static com.example.idefeedbackgateway.api.IdeTestFeedbackControllerTest.authorized;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.startsWith;
@@ -39,24 +20,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(IdeTestFeedbackController.class)
-@Import({SecurityConfig.class, GraphAuthenticationEntryPoint.class, ApiSecurityErrorWriter.class})
-class ApiExceptionHandlerTest {
-
-    @Autowired
-    private MockMvc mockMvc;
-
-    @MockitoBean
-    private IdeTestFeedbackService service;
-
-    @MockitoBean
-    private OpaqueTokenIntrospector introspector;
-
-    @BeforeEach
-    void acceptToken() {
-        when(introspector.introspect(TOKEN)).thenReturn(
-                new DefaultOAuth2AuthenticatedPrincipal(EMAIL, Map.of("upn", EMAIL), List.of()));
-    }
+class ApiExceptionHandlerTest extends ApiWebMvcTest {
 
     @Test
     void beanValidationFailureIsBadRequestWithFieldDetails() throws Exception {

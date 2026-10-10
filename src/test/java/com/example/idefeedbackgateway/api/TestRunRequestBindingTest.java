@@ -11,13 +11,16 @@ import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import jakarta.validation.ValidatorFactory;
 import org.junit.jupiter.api.Test;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TestRunRequestBindingTest {
@@ -146,7 +149,9 @@ class TestRunRequestBindingTest {
 
     @Test
     void rejectsUnknownStatus() {
-        assertThrowsOnBind(PAYLOAD.replace("\"status\": \"PASSED\"", "\"status\": \"FLAKY\""));
+        String json = PAYLOAD.replace("\"status\": \"PASSED\"", "\"status\": \"FLAKY\"");
+
+        assertThrows(JacksonException.class, () -> jsonMapper.readValue(json, TestRunRequest.class));
     }
 
     @Test
@@ -162,9 +167,9 @@ class TestRunRequestBindingTest {
                 """;
         TestRunRequest request = jsonMapper.readValue(minimal, TestRunRequest.class);
 
-        assertEquals(null, request.results().getFirst().source().path());
-        assertEquals(null, request.testFiles());
-        assertEquals(null, request.captureDisabled());
+        assertNull(request.results().getFirst().source().path());
+        assertEquals(List.of(), request.testFiles());
+        assertNull(request.captureDisabled());
 
         try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
             Set<ConstraintViolation<TestRunRequest>> violations = factory.getValidator().validate(request);
@@ -184,16 +189,5 @@ class TestRunRequestBindingTest {
                     .collect(Collectors.toSet());
             assertEquals(expectedPaths, paths);
         }
-    }
-
-    private void assertThrowsOnBind(String json) {
-        boolean failed;
-        try {
-            jsonMapper.readValue(json, TestRunRequest.class);
-            failed = false;
-        } catch (RuntimeException e) {
-            failed = true;
-        }
-        assertFalse(!failed, "expected binding to fail");
     }
 }
