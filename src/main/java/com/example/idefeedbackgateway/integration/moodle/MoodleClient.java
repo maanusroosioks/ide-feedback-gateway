@@ -1,10 +1,8 @@
 package com.example.idefeedbackgateway.integration.moodle;
 
 import com.example.idefeedbackgateway.integration.moodle.config.MoodleProperties;
+import com.example.idefeedbackgateway.integration.moodle.dto.MoodleRunListsPayload;
 import com.example.idefeedbackgateway.integration.moodle.dto.MoodleSubmitRunResponse;
-import com.example.idefeedbackgateway.integration.moodle.dto.MoodleTestFilePayload;
-import com.example.idefeedbackgateway.integration.moodle.dto.MoodleTestResultPayload;
-import com.example.idefeedbackgateway.integration.moodle.dto.MoodleTestSourcePayload;
 import com.example.idefeedbackgateway.integration.moodle.dto.MoodleTestRunPayload;
 import com.example.idefeedbackgateway.integration.moodle.exception.MoodleIntegrationException;
 import com.example.idefeedbackgateway.integration.moodle.exception.MoodleValidationException;
@@ -20,7 +18,6 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 
 @RequiredArgsConstructor
 @Component
@@ -30,6 +27,7 @@ public class MoodleClient {
     private static final String PARAM_TOKEN = "wstoken";
     private static final String PARAM_FUNCTION = "wsfunction";
     private static final String PARAM_FORMAT = "moodlewsrestformat";
+    private static final String PARAM_PAYLOAD = "payload";
     private static final String FORMAT_JSON = "json";
     private static final String FIELD_EXCEPTION = "exception";
     private static final String FIELD_ERRORCODE = "errorcode";
@@ -41,7 +39,7 @@ public class MoodleClient {
     private final ObjectMapper objectMapper;
 
     public MoodleSubmitRunResponse submitTestRun(MoodleTestRunPayload payload) {
-        MultiValueMap<String, Object> form = toFormParams(payload);
+        MultiValueMap<String, String> form = toFormParams(payload);
         form.add(PARAM_TOKEN, properties.token());
         form.add(PARAM_FUNCTION, properties.submitRunFunction());
         form.add(PARAM_FORMAT, FORMAT_JSON);
@@ -51,7 +49,7 @@ public class MoodleClient {
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(form)
                 .retrieve()
-                .onStatus(HttpStatusCode::isError, (_, response) -> {
+                .onStatus(HttpStatusCode::isError, (request, response) -> {
                     String body = new String(response.getBody().readAllBytes(), StandardCharsets.UTF_8);
                     throw new MoodleIntegrationException(
                             "Moodle web service returned HTTP %s: %s".formatted(response.getStatusCode(), body));
@@ -107,61 +105,35 @@ public class MoodleClient {
         return result.status() != null ? result : new MoodleSubmitRunResponse(result.runId(), "ok");
     }
 
-    private MultiValueMap<String, Object> toFormParams(MoodleTestRunPayload payload) {
-        MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
+    private MultiValueMap<String, String> toFormParams(MoodleTestRunPayload payload) {
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         putIfNotNull(form, "email", payload.userEmail());
         putIfNotNull(form, "assignmentkey", payload.assignmentKey());
-        putIfNotNull(form, "ide", payload.ide().name());
+        putIfNotNull(form, "ide", payload.ide());
         putIfNotNull(form, "projectname", payload.projectName());
         putIfNotNull(form, "commithash", payload.commitHash());
-        putIfNotNull(form, "startedat", payload.startedAt());
-        putIfNotNull(form, "finishedat", payload.finishedAt());
+        putIfNotNull(form, "repourl", payload.repoUrl());
+        putIfNotNull(form, "startedatms", payload.startedAtMs());
+        putIfNotNull(form, "finishedatms", payload.finishedAtMs());
         putIfNotNull(form, "capturedisabled", payload.captureDisabled());
-        putIfNotNull(form, "warningacknowledged", payload.warningAcknowledged());
-
-        List<MoodleTestResultPayload> results = payload.results();
-        for (int i = 0; i < results.size(); i++) {
-            putResultParams(form, "results[%d]".formatted(i), results.get(i));
-        }
-
-        List<MoodleTestFilePayload> testFiles = payload.testFiles();
-        for (int i = 0; i < testFiles.size(); i++) {
-            putTestFileParams(form, "testfiles[%d]".formatted(i), testFiles.get(i));
-        }
+        form.add(PARAM_PAYLOAD, writeListsPayload(payload));
         return form;
     }
 
-    private void putResultParams(MultiValueMap<String, Object> form, String prefix, MoodleTestResultPayload result) {
-        putIfNotNull(form, prefix + "[testsuite]", result.testSuite());
-        putIfNotNull(form, prefix + "[testname]", result.testName());
-        putIfNotNull(form, prefix + "[status]", result.status().name());
-        putIfNotNull(form, prefix + "[durationms]", result.durationMs());
-        putIfNotNull(form, prefix + "[message]", result.message());
-        putIfNotNull(form, prefix + "[stacktracehash]", result.stackTraceHash());
-        putSourceParams(form, prefix + "[source]", result.source());
-    }
-
-    private void putSourceParams(MultiValueMap<String, Object> form, String prefix, MoodleTestSourcePayload source) {
-        if (source == null) {
-            return;
+    /**
+     * The run's lists go over as one parameter: flattened into form fields, every leaf counts
+     * against PHP's {@code max_input_vars} and a large run is truncated before Moodle sees it.
+     */
+    private String writeListsPayload(MoodleTestRunPayload payload) {
+        MoodleRunListsPayload lists = new MoodleRunListsPayload(payload.results(), payload.testFiles());
+        try {
+            return objectMapper.writeValueAsString(lists);
+        } catch (JacksonException e) {
+            throw new MoodleIntegrationException("Could not serialize the run payload", e);
         }
-        putIfNotNull(form, prefix + "[kind]", source.kind().name());
-        putIfNotNull(form, prefix + "[filepath]", source.filePath());
-        putIfNotNull(form, prefix + "[startline]", source.startLine());
-        putIfNotNull(form, prefix + "[endline]", source.endLine());
-        putIfNotNull(form, prefix + "[code]", source.code());
-        putIfNotNull(form, prefix + "[truncated]", source.truncated());
-        putIfNotNull(form, prefix + "[normalizedcodehash]", source.normalizedCodeHash());
     }
 
-    private void putTestFileParams(MultiValueMap<String, Object> form, String prefix, MoodleTestFilePayload testFile) {
-        putIfNotNull(form, prefix + "[path]", testFile.path());
-        putIfNotNull(form, prefix + "[sha256]", testFile.sha256());
-        putIfNotNull(form, prefix + "[content]", testFile.content());
-        putIfNotNull(form, prefix + "[truncated]", testFile.truncated());
-    }
-
-    private void putIfNotNull(MultiValueMap<String, Object> form, String key, Object value) {
+    private void putIfNotNull(MultiValueMap<String, String> form, String key, Object value) {
         if (value != null) {
             form.add(key, toFormValue(value));
         }
@@ -171,10 +143,11 @@ public class MoodleClient {
      * Moodle's {@code validate_param} compares a PARAM_BOOL value against {@code clean_param}'s
      * output as a string, so it only accepts "1"/"0" - "true" is rejected as an invalid parameter.
      */
-    private Object toFormValue(Object value) {
-        if (value instanceof Boolean flag) {
-            return flag ? "1" : "0";
-        }
-        return value;
+    private String toFormValue(Object value) {
+        return switch (value) {
+            case Boolean flag -> flag ? "1" : "0";
+            case Enum<?> constant -> constant.name();
+            default -> value.toString();
+        };
     }
 }

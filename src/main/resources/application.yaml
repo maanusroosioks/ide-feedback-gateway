@@ -1,18 +1,17 @@
 spring:
   application:
     name: ide-feedback-gateway
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: https://login.microsoftonline.com/${azure.tenant-id}/v2.0
 
-azure:
-  tenant-id: ${AZURE_TENANT_ID}
-  audience: ${AZURE_AUDIENCE}
+graph:
+  base-url: https://graph.microsoft.com/v1.0
+  tenant-id: ${GRAPH_TENANT_ID}
+  cache-ttl: 5m
+  cache-max-size: 10000
+  connect-timeout: 3s
+  read-timeout: 5s
 
 moodle:
   base-url: ${MOODLE_BASE_URL}
   token: ${MOODLE_TOKEN}
   submit-run-function: mod_idetestfeedback_submit_test_run
-  validation-error-prefix: idetestfeedback_validation_
+  validation-error-prefix: validation_

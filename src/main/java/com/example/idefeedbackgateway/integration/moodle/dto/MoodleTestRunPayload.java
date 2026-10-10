@@ -10,11 +10,11 @@ public record MoodleTestRunPayload(
         Ide ide,
         String projectName,
         String commitHash,
-        Long startedAt,
-        Long finishedAt,
+        String repoUrl,
+        Long startedAtMs,
+        Long finishedAtMs,
         List<MoodleTestResultPayload> results,
         List<MoodleTestFilePayload> testFiles,
-        Boolean captureDisabled,
-        Boolean warningAcknowledged
+        Boolean captureDisabled
 ) {
 }

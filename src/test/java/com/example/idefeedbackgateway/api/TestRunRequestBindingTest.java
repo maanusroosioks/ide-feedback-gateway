@@ -5,7 +5,6 @@ import com.example.idefeedbackgateway.api.dto.TestResult;
 import com.example.idefeedbackgateway.api.dto.TestRunRequest;
 import com.example.idefeedbackgateway.api.dto.TestSource;
 import com.example.idefeedbackgateway.model.Ide;
-import com.example.idefeedbackgateway.model.SourceKind;
 import com.example.idefeedbackgateway.model.TestResultStatus;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
@@ -15,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -28,8 +28,9 @@ class TestRunRequestBindingTest {
               "ide": "VSCODE",
               "projectName": "my-project",
               "commitHash": "a329d43f8b1e",
-              "startedAt": 1758134400000,
-              "finishedAt": 1758134403120,
+              "repoUrl": "https://github.com/org/repo",
+              "startedAtMs": 1758134400000,
+              "finishedAtMs": 1758134403120,
               "results": [
                 {
                   "testSuite": "test_calculator",
@@ -40,7 +41,7 @@ class TestRunRequestBindingTest {
                   "stackTraceHash": "9f86d081884c7d65",
                   "source": {
                     "kind": "TEST",
-                    "filePath": "tests/test_calculator.py",
+                    "path": "tests/test_calculator.py",
                     "startLine": 12,
                     "endLine": 13,
                     "code": "def test_add_returns_sum():\\n    assert add(2, 3) == 5",
@@ -64,31 +65,27 @@ class TestRunRequestBindingTest {
 
     private final JsonMapper jsonMapper = JsonMapper.builder().build();
 
+    /** The IDE plugin sends fields Moodle has no place for; they must not break binding. */
     @Test
-    void bindsFullPayloadIncludingSourceAndTestFiles() {
+    void bindsFullPayloadIgnoringFieldsMoodleDoesNotTake() {
         TestRunRequest request = jsonMapper.readValue(PAYLOAD, TestRunRequest.class);
 
         assertEquals("assignment-101", request.assignmentKey());
         assertEquals(Ide.VSCODE, request.ide());
-        assertEquals(1758134400000L, request.startedAt());
+        assertEquals("https://github.com/org/repo", request.repoUrl());
+        assertEquals(1758134400000L, request.startedAtMs());
         assertEquals(Boolean.TRUE, request.captureDisabled());
-        assertEquals(Boolean.TRUE, request.warningAcknowledged());
 
         TestResult result = request.results().getFirst();
         assertEquals(TestResultStatus.PASSED, result.status());
 
         TestSource source = result.source();
-        assertEquals(SourceKind.TEST, source.kind());
-        assertEquals("tests/test_calculator.py", source.filePath());
+        assertEquals("tests/test_calculator.py", source.path());
         assertEquals(12, source.startLine());
         assertEquals(13, source.endLine());
-        assertEquals(Boolean.FALSE, source.truncated());
-        assertEquals("b1946ac92492d234", source.normalizedCodeHash());
-        assertTrue(source.code().contains("assert add(2, 3) == 5"));
 
         TestFile testFile = request.testFiles().getFirst();
         assertEquals("tests/test_calculator.py", testFile.path());
-        assertEquals("c7be1ed902fb8dd4", testFile.sha256());
         assertEquals(Boolean.FALSE, testFile.truncated());
         assertTrue(testFile.content().startsWith("import pytest"));
     }
@@ -105,9 +102,51 @@ class TestRunRequestBindingTest {
     }
 
     @Test
-    void rejectsUnknownSourceKind() {
-        String bad = PAYLOAD.replace("\"kind\": \"TEST\"", "\"kind\": \"SNIPPET\"");
-        assertThrowsOnBind(bad);
+    void rejectsAssignmentKeyMoodleWouldNotAccept() {
+        assertViolation(PAYLOAD.replace("assignment-101", "lab 1.2"), "assignmentKey");
+    }
+
+    @Test
+    void acceptsTestNamesUpToMoodlesColumnWidth() {
+        assertViolations(PAYLOAD.replace("test_add_returns_sum", "t".repeat(1024)), Set.of());
+        assertViolation(PAYLOAD.replace("test_add_returns_sum", "t".repeat(1025)), "results[0].testName");
+    }
+
+    @Test
+    void rejectsRepoUrlLongerThanMoodlesColumn() {
+        assertViolation(PAYLOAD.replace("https://github.com/org/repo", "https://github.com/" + "r".repeat(1010)),
+                "repoUrl");
+    }
+
+    @Test
+    void rejectsRunThatFinishesBeforeItStarts() {
+        assertViolation(PAYLOAD.replace("1758134403120", "1758134300000"), "timingOrdered");
+    }
+
+    @Test
+    void rejectsNegativeTimestamps() {
+        assertViolation(PAYLOAD.replace("1758134400000", "-1"), "startedAtMs");
+    }
+
+    @Test
+    void rejectsHalfALineRange() {
+        assertViolation(PAYLOAD.replace("\"endLine\": 13,", ""), "results[0].source.lineRangeValid");
+    }
+
+    @Test
+    void rejectsReversedLineRange() {
+        assertViolation(PAYLOAD.replace("\"endLine\": 13", "\"endLine\": 11"), "results[0].source.lineRangeValid");
+    }
+
+    @Test
+    void rejectsLineRangeWithoutFile() {
+        assertViolation(PAYLOAD.replaceFirst("\"path\": \"tests/test_calculator.py\",", ""),
+                "results[0].source.lineRangeValid");
+    }
+
+    @Test
+    void rejectsUnknownStatus() {
+        assertThrowsOnBind(PAYLOAD.replace("\"status\": \"PASSED\"", "\"status\": \"FLAKY\""));
     }
 
     @Test
@@ -117,19 +156,33 @@ class TestRunRequestBindingTest {
                   "assignmentKey": "assignment-101",
                   "ide": "VSCODE",
                   "results": [
-                    { "testName": "test_add", "status": "FAILED", "source": { "kind": "NONE" } }
+                    { "testName": "test_add", "status": "FAILED", "source": {} }
                   ]
                 }
                 """;
         TestRunRequest request = jsonMapper.readValue(minimal, TestRunRequest.class);
 
-        assertEquals(SourceKind.NONE, request.results().getFirst().source().kind());
+        assertEquals(null, request.results().getFirst().source().path());
         assertEquals(null, request.testFiles());
         assertEquals(null, request.captureDisabled());
 
         try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
             Set<ConstraintViolation<TestRunRequest>> violations = factory.getValidator().validate(request);
             assertTrue(violations.isEmpty(), () -> "unexpected violations: " + violations);
+        }
+    }
+
+    private void assertViolation(String json, String path) {
+        assertViolations(json, Set.of(path));
+    }
+
+    private void assertViolations(String json, Set<String> expectedPaths) {
+        TestRunRequest request = jsonMapper.readValue(json, TestRunRequest.class);
+        try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
+            Set<String> paths = factory.getValidator().validate(request).stream()
+                    .map(violation -> violation.getPropertyPath().toString())
+                    .collect(Collectors.toSet());
+            assertEquals(expectedPaths, paths);
         }
     }
 

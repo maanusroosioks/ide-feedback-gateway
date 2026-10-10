@@ -32,9 +32,10 @@ public class IdeTestFeedbackService {
                 .map(this::toPayload)
                 .toList();
 
+        boolean captureDisabled = Boolean.TRUE.equals(request.captureDisabled());
         List<MoodleTestFilePayload> testFiles = request.testFiles() == null
                 ? List.of()
-                : request.testFiles().stream().map(this::toPayload).toList();
+                : request.testFiles().stream().map(file -> toPayload(file, captureDisabled)).toList();
 
         return new MoodleTestRunPayload(
                 userEmail,
@@ -42,12 +43,12 @@ public class IdeTestFeedbackService {
                 request.ide(),
                 request.projectName(),
                 request.commitHash(),
-                request.startedAt(),
-                request.finishedAt(),
+                request.repoUrl(),
+                request.startedAtMs(),
+                request.finishedAtMs(),
                 results,
                 testFiles,
-                request.captureDisabled(),
-                request.warningAcknowledged()
+                request.captureDisabled()
         );
     }
 
@@ -58,7 +59,6 @@ public class IdeTestFeedbackService {
                 result.status(),
                 result.durationMs(),
                 result.message(),
-                result.stackTraceHash(),
                 toPayload(result.source())
         );
     }
@@ -68,20 +68,18 @@ public class IdeTestFeedbackService {
             return null;
         }
         return new MoodleTestSourcePayload(
-                source.kind(),
-                source.filePath(),
+                source.path(),
                 source.startLine(),
-                source.endLine(),
-                source.code(),
-                source.truncated(),
-                source.normalizedCodeHash()
+                source.endLine()
         );
     }
 
-    private MoodleTestFilePayload toPayload(TestFile testFile) {
+    private MoodleTestFilePayload toPayload(TestFile testFile, boolean captureDisabled) {
+        if (captureDisabled) {
+            return new MoodleTestFilePayload(testFile.path(), null, null);
+        }
         return new MoodleTestFilePayload(
                 testFile.path(),
-                testFile.sha256(),
                 testFile.content(),
                 testFile.truncated()
         );

@@ -1,14 +1,12 @@
 package com.example.idefeedbackgateway.integration.moodle.dto;
 
-import com.example.idefeedbackgateway.model.SourceKind;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record MoodleTestSourcePayload(
-        SourceKind kind,
-        String filePath,
-        Integer startLine,
-        Integer endLine,
-        String code,
-        Boolean truncated,
-        String normalizedCodeHash
+        @JsonProperty("path") String path,
+        @JsonProperty("startline") Integer startLine,
+        @JsonProperty("endline") Integer endLine
 ) {
 }
