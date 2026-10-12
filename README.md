@@ -17,15 +17,14 @@ The plugin never sees a Moodle token, and Moodle never sees the student's Micros
 ## Requirements
 
 - Java 21
-- Maven, via the included wrapper (`./mvnw`, or `mvnw.cmd` on Windows)
 - A Moodle site with `mod_idetestfeedback` installed and a web service token that may call
   `mod_idetestfeedback_submit_test_run`
 - The ID of the Microsoft Entra tenant whose users may submit
 
 ## Configuration
 
-Settings live in `src/main/resources/application.yaml`. Three have no default and must come from
-the environment:
+Defaults live in `src/main/resources/application.yaml`, which is packaged into the jar. Three
+settings have no default and must come from the environment:
 
 | Variable          | Property          | Description                                               |
 |-------------------|-------------------|-----------------------------------------------------------|
@@ -33,7 +32,8 @@ the environment:
 | `MOODLE_BASE_URL` | `moodle.base-url` | Moodle site root, e.g. `https://moodle.example.edu`       |
 | `MOODLE_TOKEN`    | `moodle.token`    | Moodle web service token                                  |
 
-The rest have working defaults:
+The rest have working defaults. To change one, set it as an environment variable (`graph.cache-ttl`
+becomes `GRAPH_CACHE_TTL`) or pass it on the command line (`--graph.cache-ttl=10m`):
 
 | Property                         | Default                                | Description                                                     |
 |----------------------------------|----------------------------------------|-----------------------------------------------------------------|
@@ -49,13 +49,22 @@ The rest have working defaults:
 
 The application refuses to start if a required setting is missing or invalid.
 
+## Building
+
+```bash
+./mvnw package
+```
+
+This runs the tests and writes `target/ide-feedback-gateway-<version>.jar`. On Windows, use
+`mvnw.cmd` in place of `./mvnw`.
+
 ## Running
 
 ```bash
 export GRAPH_TENANT_ID=<tenant-id>
 export MOODLE_BASE_URL=https://moodle.example.edu
 export MOODLE_TOKEN=<token>
-./mvnw spring-boot:run
+java -jar ide-feedback-gateway-0.1.0.jar
 ```
 
 On Windows PowerShell:
@@ -64,11 +73,11 @@ On Windows PowerShell:
 $env:GRAPH_TENANT_ID = "<tenant-id>"
 $env:MOODLE_BASE_URL = "https://moodle.example.edu"
 $env:MOODLE_TOKEN = "<token>"
-.\mvnw.cmd spring-boot:run
+java -jar ide-feedback-gateway-0.1.0.jar
 ```
 
-The service listens on port 8080. To build a runnable jar instead, use `./mvnw package` and run
-`java -jar target/ide-feedback-gateway-0.0.1-SNAPSHOT.jar`.
+The service listens on port 8080; add `--server.port=<port>` to change it. During development,
+`./mvnw spring-boot:run` starts it from source without building a jar.
 
 ## Authentication
 
@@ -140,7 +149,7 @@ Submits one test run for the signed-in student.
 | `results[].status`                 | Required: `PASSED`, `FAILED`, `SKIPPED` or `ERROR`                       |
 | `results[].durationMs`             | Not negative                                                             |
 | `results[].message`                | At most 4000 characters                                                  |
-| `results[].source`                 | Optional. `path` at most 1024 characters; `startLine` and `endLine` are both set or both left out, need a `path`, and `endLine` is not before `startLine` |
+| `results[].source`                 | Optional. `path` at most 1024 characters; `startLine` and `endLine` are both set or both left out, need a `path`, are at least 1, and `endLine` is not before `startLine` |
 | `testFiles`                        | At most 200 entries, no `null` entries                                   |
 | `testFiles[].path`                 | Required, at most 1024 characters                                        |
 | `testFiles[].content`              | All files' content together at most 1,000,000 characters                 |
@@ -184,20 +193,19 @@ The gateway calls Moodle's REST endpoint, `/webservice/rest/server.php`, with a 
 
 - `wstoken`, `wsfunction` and `moodlewsrestformat=json`
 - the run's scalar fields as separate parameters (`email`, `assignmentkey`, `ide`, `projectname`,
-  `commithash`, `repourl`, `startedatms`, `finishedatms`, `capturedisabled`)
-- the `results` and `testFiles` lists as a single JSON string in `payload`
-
-Sending the lists as one parameter keeps large runs within PHP's `max_input_vars`, which would
-otherwise cut them off silently. Booleans are sent as `1`/`0`, because Moodle's `PARAM_BOOL`
-validation rejects `true`.
+  `commithash`, `repourl`, `startedatms`, `finishedatms`, `capturedisabled`); fields the plugin
+  left out are not sent, and booleans are sent as `1`/`0`
+- the `results` and `testFiles` lists as a single JSON string in `payload`, with all keys in
+  lowercase (`testfiles`, `testname`, `durationms`, ...)
 
 When Moodle answers with an error, an error code starting with `moodle.validation-error-prefix`
 becomes `MOODLE_VALIDATION_ERROR`; anything else becomes `MOODLE_UNAVAILABLE`.
 
 ## Logging and privacy
 
-Requests to the gateway and to Moodle are logged at INFO with method, URL, status and duration.
-Request bodies contain student source code and email addresses, so they are only logged at DEBUG.
+Requests to the gateway and to Moodle are logged at INFO with method, URL, status, duration and
+response body; responses with status 400 or above are logged at WARN. Request bodies contain
+student source code and email addresses, so they are only logged at DEBUG.
 Leave DEBUG off in production: at that level, bodies are logged even for students who set
 `captureDisabled`. The Moodle token is always masked in logs.
 
@@ -208,9 +216,6 @@ Leave DEBUG off in production: at that level, bodies are logged even for student
 ```
 
 The tests need no network access: Graph and Moodle are replaced by mock servers.
-
-For manual testing, `postman/` contains a collection and an environment. Set `baseUrl` (default
-`http://localhost:8080`) and paste a Graph access token with `User.Read` into `accessToken`.
 
 ## Project layout
 
